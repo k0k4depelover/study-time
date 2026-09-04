@@ -24,6 +24,6 @@ No Docker required. No cloud subscription. No 400MB `node_modules` just to track
 
 ```bash
 # Clone and run (instant setup)
-git clone [https://github.com/tu-usuario/tu-repo.git](https://github.com/tu-usuario/tu-repo.git)
-cd tu-repo
-python main.py  # o tu comando de ejecución
+git clone git@github.com:k0k4depelover/study-time.git
+cd ustudy-time
+python server.py 
