@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎓 Study Session Timer</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════════ HEADER -->
+  <header class="app-header">
+    <div class="app-title">🎓 Study Session Timer</div>
+    <div class="header-right">
+      <div id="header-session" class="header-session hidden">
+        <span class="hs-label">sesión</span>
+        <span id="header-session-time" class="hs-time">0:00:00</span>
+      </div>
+      <button id="btn-toggle-import" class="btn-icon" title="Editar plan">✏️ Plan</button>
+      <button id="btn-toggle-example" class="btn-icon" title="Obtener prompt ejemplo" >✏️ Ejemplo</button>
+    </div>
+  </header>
+
+  <!-- ═════════════════════════════════════════════════════════ IMPORT -->
+  <section id="import-section">
+    <div class="import-inner">
+
+      <!-- Tabs -->
+      <div class="tab-bar" role="tablist">
+        <button class="tab-btn active" data-tab="markdown" role="tab">📝 Markdown</button>
+        <button class="tab-btn" data-tab="table" role="tab">📊 Tabla manual</button>
+      </div>
+
+      <!-- ── Markdown panel ── -->
+      <div id="panel-markdown" class="tab-panel active">
+        <textarea id="markdown-input" rows="11" spellcheck="false"
+          placeholder="# Mi sesión de estudio
+
+| Tarea          | Minutos | Descripción               | 25% | 50% | 75% |
+|----------------|---------|---------------------------|-----|-----|-----|
+| Matemáticas    | 45      | Derivadas e integrales    | ✓   | ✓   | ✓   |
+| Física         | 50      | Mecánica cuántica         |     | ✓   |     |
+| Programación   | 60      | Algoritmos de ordenamiento| ✓   | ✓   | ✓   |
+| Descanso       | 10      |                           |     |     |     |
+
+También puedes usar headings:
+## Nombre de tarea (45 min)
+Descripción opcional aquí"></textarea>
+        <div class="input-hint">
+          <span>Tabla Markdown o <code>## Tarea (N min)</code></span>
+          <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> para cargar</span>
+        </div>
+      </div>
+
+      <!-- ── Manual table panel ── -->
+      <div id="panel-table" class="tab-panel">
+        <div class="table-scroll">
+          <table id="task-table" class="editable-table">
+            <thead>
+              <tr>
+                <th class="col-name">Tarea <span class="req">*</span></th>
+                <th class="col-min">Min <span class="req">*</span></th>
+                <th class="col-desc">Descripción</th>
+                <th class="col-pct" title="Hito de avance al 25%">25%</th>
+                <th class="col-pct" title="Hito de avance al 50%">50%</th>
+                <th class="col-pct" title="Hito de avance al 75%">75%</th>
+                <th class="col-del"></th>
+              </tr>
+            </thead>
+            <tbody id="task-table-body"></tbody>
+          </table>
+        </div>
+        <button id="btn-add-row" class="btn-secondary btn-sm">＋ Agregar tarea</button>
+      </div>
+
+      <!-- Error + actions -->
+      <div id="parse-error" class="error-msg hidden"></div>
+      <div class="import-actions">
+        <button id="btn-parse" class="btn-primary">▶ Cargar plan</button>
+      </div>
+
+    </div><!-- /import-inner -->
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════ SESSION -->
+  <div id="session-view" class="hidden">
+    <div class="session-layout">
+
+      <!-- ── Left: current task + controls ── -->
+      <main class="session-main">
+
+        <!-- Idle placeholder (shown before session starts) -->
+        <div id="session-idle" class="session-idle">
+          <div class="idle-icon">⏱</div>
+          <p>Plan cargado · <strong id="idle-summary"></strong></p>
+          <p class="idle-sub">Presiona <strong>▶ Iniciar</strong> para comenzar la sesión.</p>
+        </div>
+
+        <!-- Current task card -->
+        <div id="task-card" class="task-card hidden">
+
+          <div class="task-card-top">
+            <span id="task-index-badge" class="task-index-badge"></span>
+            <h2 id="task-name" class="task-name"></h2>
+            <p id="task-desc" class="task-desc"></p>
+          </div>
+
+          <!-- Timers -->
+          <div class="timers-row">
+            <div class="timer-block timer-block--main">
+              <div class="timer-label">Esta tarea</div>
+              <div id="task-timer-wrap" class="task-timer-wrap">
+                <div id="task-timer" class="timer-main">00:00</div>
+                <div id="extra-badge" class="extra-badge hidden">+ TIEMPO EXTRA</div>
+              </div>
+              <div class="time-bar-track">
+                <div id="task-time-bar" class="time-bar-fill"></div>
+              </div>
+            </div>
+            <div class="timer-block timer-block--side">
+              <div class="timer-label">Sesión total</div>
+              <div id="session-timer" class="timer-side">0:00:00</div>
+              <div class="timer-label" style="margin-top:6px" id="tasks-remaining-label"></div>
+            </div>
+          </div>
+
+          <!-- Milestone / completion buttons -->
+          <div class="completion-section">
+            <div class="completion-label">Marcar avance</div>
+            <div class="milestone-btns" id="task-milestones">
+              <button class="btn-milestone" data-pct="25">25%</button>
+              <button class="btn-milestone" data-pct="50">50%</button>
+              <button class="btn-milestone" data-pct="75">75%</button>
+              <button class="btn-milestone btn-milestone--done" data-pct="100">✓ 100%</button>
+            </div>
+          </div>
+
+          <!-- Control buttons -->
+          <div class="controls-row">
+            <button id="btn-start-pause" class="btn-primary btn-xl">▶ Iniciar</button>
+            <button id="btn-extra-time" class="btn-secondary" title="Agregar tiempo extra a esta tarea">⏱ Extra</button>
+            <button id="btn-skip" class="btn-ghost" title="Marcar como terminada e ir a la siguiente">⟶ Siguiente</button>
+            <button id="btn-reset" class="btn-ghost btn-danger-ghost" title="Reiniciar sesión">↺</button>
+          </div>
+
+        </div><!-- /task-card -->
+
+        <!-- Session ended summary -->
+        <div id="session-summary" class="session-summary hidden">
+          <div class="summary-icon">🎉</div>
+          <h2>¡Sesión completada!</h2>
+          <div id="summary-stats" class="summary-stats"></div>
+          <div id="summary-tasks" class="summary-tasks"></div>
+          <button id="btn-new-session" class="btn-primary">↺ Nueva sesión</button>
+        </div>
+
+      </main>
+
+      <!-- ── Right: task list ── -->
+      <aside class="task-list-panel">
+        <div class="tl-header">
+          <h3>Tareas</h3>
+          <span id="tl-summary" class="tl-summary"></span>
+        </div>
+        <div id="task-list" class="task-list"></div>
+      </aside>
+
+    </div><!-- /session-layout -->
+  </div>
+
+  <!-- ═════════════════════════════════════════════ MODAL: task ended -->
+  <div id="modal-task-end" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-alarm-icon" aria-hidden="true">⏰</div>
+      <h3 class="modal-title">¡Tiempo!</h3>
+      <p id="modal-task-name" class="modal-task-name"></p>
+      <p id="modal-next-info" class="modal-next-info"></p>
+
+      <div class="modal-section">
+        <div class="completion-label">¿Qué tanto completaste?</div>
+        <div class="milestone-btns milestone-btns--modal">
+          <button class="btn-milestone modal-milestone" data-pct="0">0%</button>
+          <button class="btn-milestone modal-milestone" data-pct="25">25%</button>
+          <button class="btn-milestone modal-milestone" data-pct="50">50%</button>
+          <button class="btn-milestone modal-milestone" data-pct="75">75%</button>
+          <button class="btn-milestone modal-milestone btn-milestone--done" data-pct="100">✓ 100%</button>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btn-modal-extra" class="btn-secondary">⏱ Tiempo extra</button>
+        <button id="btn-modal-next" class="btn-primary">Siguiente tarea ⟶</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════ MODAL: extra time -->
+  <div id="modal-extra-time" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-card modal-card--sm">
+      <h3 class="modal-title">⏱ Tiempo extra</h3>
+      <p class="modal-subtitle">¿Cuántos minutos adicionales?</p>
+      <input id="extra-minutes-input" type="number" class="time-number-input"
+             min="1" max="240" value="10" aria-label="Minutos extra">
+      <div class="modal-actions">
+        <button id="btn-cancel-extra" class="btn-ghost">Cancelar</button>
+        <button id="btn-confirm-extra" class="btn-primary">Agregar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MCP status toast -->
+  <div id="mcp-toast" class="mcp-toast hidden">
+    📡 Plan recibido vía MCP
+  </div>
+
+  <script src="/alarm.js"></script>
+  <script src="/parser.js"></script>
+  <script src="/timer.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

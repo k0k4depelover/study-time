@@ -1,0 +1,115 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Study Session Timer - MCP Tools",
+    "description": "MCP-compatible HTTP tools for the Study Session Timer. An AI agent can call these endpoints to inject a study plan into the running timer UI or retrieve an example plan template.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Local development server"
+    }
+  ],
+  "paths": {
+    "/mcp/tools/get_example_plan": {
+      "get": {
+        "operationId": "get_example_plan",
+        "summary": "Get example study plan",
+        "description": "Returns a ready-to-use Markdown study plan template. The agent can inspect it to understand the expected format before calling set_plan.",
+        "responses": {
+          "200": {
+            "description": "Example plan returned successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["Example plan"],
+                  "properties": {
+                    "Example plan": {
+                      "type": "string",
+                      "description": "A Markdown-formatted study plan with a task table and optional heading-style tasks"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mcp/tools/set_plan": {
+      "post": {
+        "operationId": "set_plan",
+        "summary": "Set the active study plan",
+        "description": "Replaces the current study plan shown in the timer UI. The frontend polls /api/plan every 2 seconds and will automatically load the new plan. Use Markdown table format or heading-style tasks (## Task name (N min)).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "description": "The full Markdown text of the study plan"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": ["markdown"],
+                    "default": "markdown",
+                    "description": "Plan format (only markdown is supported)"
+                  },
+                  "params": {
+                    "type": "object",
+                    "description": "Alternative wrapper: pass content/format inside a params object (MCP envelope style)",
+                    "properties": {
+                      "content": { "type": "string" },
+                      "format": { "type": "string", "enum": ["markdown"] }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Plan saved and broadcast to the UI",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["result", "tool"],
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "ok": { "type": "boolean" },
+                        "etag": { "type": "integer", "description": "Monotonically increasing version counter" }
+                      }
+                    },
+                    "tool": { "type": "string", "example": "set_plan" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
