@@ -27,6 +27,7 @@ import sqlite3
 import sys
 import threading
 import time
+import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
 
@@ -38,9 +39,19 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
         pass
 
 # ── Paths ────────────────────────────────────────────────────────────────────
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-DB_PATH = os.path.join(BASE_DIR, "study.db")
+# When running as a PyInstaller bundle, __file__ points to a temp extraction
+# dir (_MEIPASS), not the exe's location.  We need two different roots:
+#   BUNDLE_DIR  — where bundled assets live (static/, openapi.json)
+#   BASE_DIR    — where mutable data lives (study.db); same as the exe
+if getattr(sys, "frozen", False):
+    BASE_DIR   = os.path.dirname(sys.executable)   # next to the .exe
+    BUNDLE_DIR = sys._MEIPASS                       # temp extraction dir
+else:
+    BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+    BUNDLE_DIR = BASE_DIR
+
+STATIC_DIR = os.path.join(BUNDLE_DIR, "static")
+DB_PATH    = os.path.join(BASE_DIR,   "study.db")
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -339,7 +350,7 @@ class Handler(BaseHTTPRequestHandler):
 
     # ── /openapi.json ─────────────────────────────────────────────────────────
     def _serve_openapi(self):
-        openapi_path = os.path.join(BASE_DIR, "openapi.json")
+        openapi_path = os.path.join(BUNDLE_DIR, "openapi.json")
         with open(openapi_path, "r", encoding="utf-8") as f:
             content = f.read()
         self.send_response(200)
@@ -378,8 +389,14 @@ def main():
         print(f"  Persisted session: none")
     print(f"\n MCP GET http://{host}:{port}/mcp/tools/get_example_plan")
     print(f"\n  MCP: POST http://{host}:{port}/mcp/tools/set_plan")
-
     print(f"  Ctrl+C to stop\n")
+
+    # Open the browser automatically after a brief delay so the server
+    # is fully up.  Daemon thread — won't block shutdown.
+    url = f"http://{host}:{port}"
+    t = threading.Timer(0.5, lambda: webbrowser.open(url))
+    t.daemon = True
+    t.start()
 
     try:
         httpd.serve_forever()

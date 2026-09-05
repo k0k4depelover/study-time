@@ -18,14 +18,16 @@
 // ═══════════════════════════════════════════════════════════════ State
 
 const State = {
-  tasks:           [],         // current task list
-  timer:           null,       // SessionTimer instance
-  phase:           'idle',     // idle | ready | running | paused | task-ended | done
+  tasks:           [],
+  timer:           null,
+  phase:           'idle',
   lastEtag:        '0',
   pollingTimer:    null,
-  heartbeatTimer:  null,       // 30-s DB heartbeat during running sessions
-  planContent:     '',         // raw markdown kept for DB sync
+  heartbeatTimer:  null,
+  planContent:     '',
   planFormat:      'markdown',
+  autoBreak:       false,      // insert breaks between tasks automatically
+  breakMinutes:    10,         // duration of each auto-inserted break
 };
 
 // ═══════════════════════════════════════════════════════════════ DOM helpers
@@ -76,12 +78,17 @@ function initManualTable() {
   for (let i = 0; i < 3; i++) addTableRow();
 }
 
+// Table drag state — separate from the task-list drag state
+let _tblDrag = { el: null };
+
 function addTableRow(data = {}) {
   const id = _rowId++;
   const tr = document.createElement('tr');
-  tr.dataset.rid = id;
+  tr.dataset.rid  = id;
+  tr.draggable    = true;
 
   tr.innerHTML = `
+    <td class="cell-drag"><span class="tl-drag" aria-hidden="true" title="Reordenar">⠿</span></td>
     <td><input class="cell-input cell-name" type="text" placeholder="Nombre" value="${_esc(data.name || '')}"></td>
     <td><input class="cell-input cell-min"  type="number" placeholder="25" min="1" max="600" value="${data.minutes || ''}"></td>
     <td><input class="cell-input cell-desc" type="text" placeholder="Descripción" value="${_esc(data.description || '')}"></td>
@@ -90,8 +97,40 @@ function addTableRow(data = {}) {
     <td class="cell-checkbox"><input type="checkbox" ${data.m75 ? 'checked' : ''} aria-label="75%"></td>
     <td><button class="btn-remove-row" onclick="this.closest('tr').remove()" title="Eliminar fila">✕</button></td>
   `;
+
+  tr.addEventListener('dragstart', _tblDragStart);
+  tr.addEventListener('dragover',  _tblDragOver);
+  tr.addEventListener('dragend',   _tblDragEnd);
+
   $('task-table-body').appendChild(tr);
 }
+
+function _tblDragStart(e) {
+  _tblDrag.el = this;
+  e.dataTransfer.effectAllowed = 'move';
+  requestAnimationFrame(() => this.classList.add('is-dragging'));
+}
+
+function _tblDragOver(e) {
+  e.preventDefault();
+  if (!_tblDrag.el || _tblDrag.el === this) return;
+  // Live swap: insert the dragged row before or after this one
+  const tbody   = $('task-table-body');
+  const rows    = Array.from(tbody.querySelectorAll('tr'));
+  const fromIdx = rows.indexOf(_tblDrag.el);
+  const toIdx   = rows.indexOf(this);
+  if (fromIdx < toIdx) {
+    tbody.insertBefore(_tblDrag.el, this.nextSibling);
+  } else {
+    tbody.insertBefore(_tblDrag.el, this);
+  }
+}
+
+function _tblDragEnd() {
+  this.classList.remove('is-dragging');
+  _tblDrag.el = null;
+}
+
 
 function _getTableRows() {
   return Array.from($$('#task-table-body tr')).map(tr => {
@@ -116,7 +155,12 @@ function initImportControls() {
     if (e.ctrlKey && e.key === 'Enter') parsePlan();
   });
   $('btn-toggle-import').addEventListener('click', () => {
+    const isCollapsed = $('import-section').classList.contains('collapsed');
     $('import-section').classList.toggle('collapsed');
+    // When opening, always land on the table tab (primary UI)
+    if (isCollapsed) {
+      document.querySelector('.tab-btn[data-tab=table]')?.click();
+    }
   });
   $('btn-toggle-example').addEventListener('click', async () => {
     const example = await getExampleMcp();
@@ -127,6 +171,49 @@ function initImportControls() {
     $('markdown-input').value = example.trim();
     $('markdown-input').focus();
   });
+  $('btn-auto-break').addEventListener('click', () => {
+    State.autoBreak = !State.autoBreak;
+    $('btn-auto-break').classList.toggle('active', State.autoBreak);
+  });
+
+  // Keep State.breakMinutes in sync with the number input
+  const breakInput = $('break-minutes-input');
+  breakInput.addEventListener('input', () => {
+    const v = parseInt(breakInput.value, 10);
+    if (v >= 1 && v <= 120) State.breakMinutes = v;
+  });
+  // Clamp on blur so the field never shows an out-of-range value
+  breakInput.addEventListener('blur', () => {
+    const v = Math.min(120, Math.max(1, parseInt(breakInput.value, 10) || 10));
+    breakInput.value = v;
+    State.breakMinutes = v;
+  });
+}
+
+/**
+ * Insert a 10-minute break task between every pair of adjacent non-break tasks.
+ * Break tasks are marked with isBreak:true so the task-list can style them differently.
+ * @param {Object[]} tasks — parsed task array
+ * @returns {Object[]} new array with breaks interleaved
+ */
+function _insertBreaks(tasks) {
+  if (tasks.length < 2) return tasks;
+  const result = [];
+  tasks.forEach((task, i) => {
+    result.push(task);
+    if (i < tasks.length - 1 && !task.isBreak) {
+      result.push({
+        name:         'Descanso',
+        minutes:      State.breakMinutes,
+        description:  '',
+        milestones:   [],
+        completion:   0,
+        extraMinutes: 0,
+        isBreak:      true,
+      });
+    }
+  });
+  return result;
 }
 
 function parsePlan() {
@@ -152,16 +239,24 @@ function parsePlan() {
     return;
   }
 
+  // Inject 10-min breaks between tasks if the toggle is on
+  if (State.autoBreak) {
+    tasks = _insertBreaks(tasks);
+  }
+
   // Keep raw content for DB sync
   State.planContent = content;
   State.planFormat  = format;
 
-  // Persist plan to DB (fire-and-forget)
+  // Persist plan to DB — capture the new etag so the poller
+  // gets a 304 on the next tick and never reloads without breaks.
   fetch('/api/plan', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ content, format }),
-  }).catch(() => {});
+  }).then(r => r.json())
+    .then(d => { if (d.etag != null) State.lastEtag = String(d.etag); })
+    .catch(() => {});
 
   loadSession(tasks);
 }
@@ -211,7 +306,7 @@ function loadSession(tasks) {
   renderTaskList();
   updateHeaderTimer(timer.sessionRemaining);
   setPhase('ready');
-
+  $('btn-add-task').classList.remove('hidden');
   requestNotificationPermission();
 }
 
@@ -333,23 +428,45 @@ function syncMilestoneButtons(pct) {
 
 // ═══════════════════════════════════════════════════════════════ Task list
 
+// ── Drag state ────────────────────────────────────────────────────────────
+let _drag = { fromIdx: -1, toIdx: -1 };
+
 function renderTaskList() {
-  const list = $('task-list');
-  list.innerHTML = '';
-  const tasks = State.tasks;
+  const list       = $('task-list');
+  list.innerHTML   = '';
+  const tasks      = State.tasks;
+  const currentIdx = State.timer?.currentIndex ?? -1;
 
   tasks.forEach((task, i) => {
+    const isPending = i > currentIdx;
+
     const div = document.createElement('div');
-    div.className = 'task-item';
+    div.className = 'task-item' + (task.isBreak ? ' is-break' : '');
     div.id = `tl-${i}`;
+
+    if (isPending) {
+      div.draggable    = true;
+      div.dataset.idx  = i;
+      div.addEventListener('dragstart', _onDragStart);
+      div.addEventListener('dragover',  _onDragOver);
+      div.addEventListener('dragleave', _onDragLeave);
+      div.addEventListener('drop',      _onDragDrop);
+      div.addEventListener('dragend',   _onDragEnd);
+    }
+
+    const icon       = task.isBreak ? '⏸' : '○';
+    const dragHandle = isPending
+      ? `<span class="tl-drag" aria-hidden="true" title="Reordenar">⠿</span>`
+      : `<span class="tl-drag tl-drag--hidden" aria-hidden="true"></span>`;
 
     div.innerHTML = `
       <div class="ti-header">
-        <span class="ti-icon" id="ti-icon-${i}">○</span>
+        ${dragHandle}
+        <span class="ti-icon" id="ti-icon-${i}">${icon}</span>
         <span class="ti-name">${_esc(task.name)}</span>
         <span class="ti-time">${task.minutes} min</span>
       </div>
-      ${task.description ? `<div class="ti-desc">${_esc(task.description)}</div>` : ''}
+      ${task.description && !task.isBreak ? `<div class="ti-desc">${_esc(task.description)}</div>` : ''}
       <div class="ti-progress-track">
         <div class="ti-progress-fill" id="ti-bar-${i}" style="width:0%"></div>
       </div>
@@ -360,6 +477,145 @@ function renderTaskList() {
 
   updateTaskListHighlight();
   updateTaskListSummary();
+}
+
+// ── Drag-and-drop handlers ─────────────────────────────────────────────────
+
+function _onDragStart(e) {
+  _drag.fromIdx = parseInt(this.dataset.idx);
+  e.dataTransfer.effectAllowed = 'move';
+  // Defer class so the ghost image renders normally
+  requestAnimationFrame(() => this.classList.add('is-dragging'));
+}
+
+function _onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const toIdx      = parseInt(this.dataset.idx);
+  const currentIdx = State.timer?.currentIndex ?? -1;
+  if (toIdx > currentIdx && toIdx !== _drag.fromIdx) {
+    _drag.toIdx = toIdx;
+    $$('.task-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+    this.classList.add('drag-over');
+  }
+}
+
+function _onDragLeave() {
+  this.classList.remove('drag-over');
+}
+
+function _onDragDrop(e) {
+  e.preventDefault();
+  this.classList.remove('drag-over');
+  const { fromIdx, toIdx } = _drag;
+  if (fromIdx >= 0 && toIdx >= 0 && fromIdx !== toIdx) {
+    _moveTask(fromIdx, toIdx);
+  }
+}
+
+function _onDragEnd() {
+  this.classList.remove('is-dragging');
+  $$('.task-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+  _drag = { fromIdx: -1, toIdx: -1 };
+}
+
+// ── Task mutation helpers ──────────────────────────────────────────────────
+
+/**
+ * Reorder a pending task from fromIdx to toIdx.
+ * Only operates on tasks past the current one.
+ */
+function _moveTask(fromIdx, toIdx) {
+  const currentIdx = State.timer?.currentIndex ?? -1;
+  if (fromIdx <= currentIdx || toIdx <= currentIdx) return;
+  if (fromIdx === toIdx) return;
+
+  const [task] = State.tasks.splice(fromIdx, 1);
+  State.tasks.splice(toIdx, 0, task);
+
+  if (State.timer) {
+    const [t] = State.timer.tasks.splice(fromIdx, 1);
+    State.timer.tasks.splice(toIdx, 0, t);
+  }
+
+  renderTaskList();
+  updateTaskListHighlight();
+  updateTaskListSummary();
+}
+
+/**
+ * Insert a new task at a given index.
+ * If inserted before the current task, bumps timer._index by 1.
+ * Adds the task's duration to session remaining.
+ */
+function _insertTaskAt(index, { name, minutes, isBreak = false }) {
+  const task = {
+    name,
+    minutes,
+    description:  '',
+    milestones:   isBreak ? [] : [100],
+    completion:   0,
+    extraMinutes: 0,
+    isBreak,
+  };
+
+  State.tasks.splice(index, 0, task);
+
+  if (State.timer) {
+    State.timer.tasks.splice(index, 0, task);
+    // Keep session time accurate
+    State.timer._sessionRem = (State.timer._sessionRem || 0) + minutes * 60;
+    // If new task lands before current, shift index forward
+    if (index <= State.timer._index) State.timer._index++;
+  }
+
+  renderTaskList();
+  updateTaskListHighlight();
+  updateTaskListSummary();
+  if (State.timer) updateHeaderTimer(State.timer.sessionRemaining);
+  persistState();
+}
+
+// ── Insert-task modal ──────────────────────────────────────────────────────
+
+function openInsertTaskModal() {
+  const currentIdx = State.timer?.currentIndex ?? -1;
+  const sel        = $('insert-task-pos');
+  sel.innerHTML    = '';
+
+  // Build position options: after current, after each pending, at end
+  const addOpt = (value, label) => {
+    const o = document.createElement('option');
+    o.value       = value;
+    o.textContent = label;
+    sel.appendChild(o);
+  };
+
+  addOpt(currentIdx + 1, 'Justo a continuación');
+  State.tasks.forEach((t, i) => {
+    if (i > currentIdx) {
+      addOpt(i + 1, `Después de "${t.name.length > 24 ? t.name.slice(0,24)+'…' : t.name}"`);
+    }
+  });
+  addOpt(State.tasks.length, 'Al final');
+
+  $('insert-task-name').value = '';
+  $('insert-task-mins').value = 25;
+  $('modal-insert-task').classList.remove('hidden');
+  setTimeout(() => $('insert-task-name').focus(), 60);
+}
+
+function _closeInsertModal() {
+  $('modal-insert-task').classList.add('hidden');
+}
+
+function _confirmInsertTask() {
+  const name = $('insert-task-name').value.trim();
+  if (!name) { $('insert-task-name').focus(); return; }
+  const minutes = Math.max(1, parseInt($('insert-task-mins').value, 10) || 25);
+  const index   = parseInt($('insert-task-pos').value, 10);
+  _insertTaskAt(index, { name, minutes });
+  _closeInsertModal();
 }
 
 function updateTaskListHighlight() {
@@ -479,6 +735,8 @@ function resetApp() {
   $('session-summary').classList.add('hidden');
   $('task-card').classList.add('hidden');
   $('session-idle').classList.remove('hidden');
+  $('btn-add-task').classList.add('hidden');
+  $('modal-insert-task').classList.add('hidden');
 }
 
 // ═══════════════════════════════════════════════════════════════ Task-end modal
@@ -587,6 +845,20 @@ function initModalControls() {
       }
     });
   });
+
+  // ── Insert-task modal ──
+  $('btn-add-task').addEventListener('click', openInsertTaskModal);
+  $('btn-cancel-insert').addEventListener('click', _closeInsertModal);
+  $('btn-confirm-insert').addEventListener('click', _confirmInsertTask);
+  // Allow Enter to confirm
+  $('insert-task-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); _confirmInsertTask(); }
+    if (e.key === 'Escape') _closeInsertModal();
+  });
+  $('insert-task-mins').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); _confirmInsertTask(); }
+    if (e.key === 'Escape') _closeInsertModal();
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════ Summary
@@ -665,8 +937,8 @@ function startPolling() {
       const data = await res.json();
       State.lastEtag = String(data.etag);
 
-      if (data.plan?.content && data.plan?.source) {
-        // Only auto-load if it came from MCP/API (not just a stale read)
+      if (data.plan?.content && data.plan?.source === 'mcp') {
+        // Only auto-load plans injected by an external MCP agent
         handleExternalPlan(data.plan);
       }
     } catch (_) { /* server not reachable */ }
@@ -828,7 +1100,9 @@ function showRestoreBanner(saved) {
   $('rb-dismiss').addEventListener('click', () => {
     banner.classList.remove('rb-visible');
     setTimeout(() => banner.remove(), 300);
-    // Clear the saved state so it doesn't re-appear
+    // Reset UI completely — no ghost session visible after dismissal
+    resetApp();
+    // Also clear the DB record so the banner never reappears on reload
     fetch('/api/state', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },

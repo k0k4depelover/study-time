@@ -27,12 +27,34 @@
 
       <!-- Tabs -->
       <div class="tab-bar" role="tablist">
-        <button class="tab-btn active" data-tab="markdown" role="tab">📝 Markdown</button>
-        <button class="tab-btn" data-tab="table" role="tab">📊 Tabla manual</button>
+        <button class="tab-btn active" data-tab="table" role="tab">📊 Tabla</button>
+        <button class="tab-btn" data-tab="markdown" role="tab">📝 Markdown</button>
+      </div>
+
+      <!-- ── Manual table panel ── -->
+      <div id="panel-table" class="tab-panel active">
+        <div class="table-scroll">
+          <table id="task-table" class="editable-table">
+            <thead>
+              <tr>
+                <th class="col-drag"></th>
+                <th class="col-name">Tarea <span class="req">*</span></th>
+                <th class="col-min">Min <span class="req">*</span></th>
+                <th class="col-desc">Descripción</th>
+                <th class="col-pct" title="Hito de avance al 25%">25%</th>
+                <th class="col-pct" title="Hito de avance al 50%">50%</th>
+                <th class="col-pct" title="Hito de avance al 75%">75%</th>
+                <th class="col-del"></th>
+              </tr>
+            </thead>
+            <tbody id="task-table-body"></tbody>
+          </table>
+        </div>
+        <button id="btn-add-row" class="btn-secondary btn-sm">＋ Agregar tarea</button>
       </div>
 
       <!-- ── Markdown panel ── -->
-      <div id="panel-markdown" class="tab-panel active">
+      <div id="panel-markdown" class="tab-panel">
         <textarea id="markdown-input" rows="11" spellcheck="false"
           placeholder="# Mi sesión de estudio
 
@@ -52,30 +74,17 @@ Descripción opcional aquí"></textarea>
         </div>
       </div>
 
-      <!-- ── Manual table panel ── -->
-      <div id="panel-table" class="tab-panel">
-        <div class="table-scroll">
-          <table id="task-table" class="editable-table">
-            <thead>
-              <tr>
-                <th class="col-name">Tarea <span class="req">*</span></th>
-                <th class="col-min">Min <span class="req">*</span></th>
-                <th class="col-desc">Descripción</th>
-                <th class="col-pct" title="Hito de avance al 25%">25%</th>
-                <th class="col-pct" title="Hito de avance al 50%">50%</th>
-                <th class="col-pct" title="Hito de avance al 75%">75%</th>
-                <th class="col-del"></th>
-              </tr>
-            </thead>
-            <tbody id="task-table-body"></tbody>
-          </table>
-        </div>
-        <button id="btn-add-row" class="btn-secondary btn-sm">＋ Agregar tarea</button>
-      </div>
-
       <!-- Error + actions -->
       <div id="parse-error" class="error-msg hidden"></div>
       <div class="import-actions">
+        <div class="break-toggle-group">
+          <button id="btn-auto-break" class="btn-ghost btn-sm btn-break-toggle" title="Insertar descanso entre cada tarea automáticamente">
+            ⏸ Descanso auto
+          </button>
+          <input id="break-minutes-input" type="number" class="break-min-input"
+                 min="1" max="120" value="10" aria-label="Minutos de descanso">
+          <span class="break-min-label">min</span>
+        </div>
         <button id="btn-parse" class="btn-primary">▶ Cargar plan</button>
       </div>
 
@@ -160,7 +169,10 @@ Descripción opcional aquí"></textarea>
       <aside class="task-list-panel">
         <div class="tl-header">
           <h3>Tareas</h3>
-          <span id="tl-summary" class="tl-summary"></span>
+          <div class="tl-header-right">
+            <span id="tl-summary" class="tl-summary"></span>
+            <button id="btn-add-task" class="tl-add-btn hidden" title="Agregar tarea en cualquier posición">＋</button>
+          </div>
         </div>
         <div id="task-list" class="task-list"></div>
       </aside>
@@ -210,7 +222,32 @@ Descripción opcional aquí"></textarea>
 
   <!-- MCP status toast -->
   <div id="mcp-toast" class="mcp-toast hidden">
-    📡 Plan recibido vía MCP
+    Plan recibido via MCP
+  </div>
+
+  <!-- MODAL: Insert task at position -->
+  <div id="modal-insert-task" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="insert-task-title">
+    <div class="modal-card modal-card--sm">
+      <h3 class="modal-title" id="insert-task-title">Agregar tarea</h3>
+      <div class="insert-fields">
+        <div class="field-group">
+          <label class="field-label" for="insert-task-name">Nombre</label>
+          <input id="insert-task-name" type="text" class="field-input" placeholder="Nombre de la tarea" maxlength="80" autocomplete="off">
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="insert-task-mins">Duración (min)</label>
+          <input id="insert-task-mins" type="number" class="field-input" min="1" max="600" value="25">
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="insert-task-pos">Posición</label>
+          <select id="insert-task-pos" class="field-input field-select"></select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="btn-cancel-insert" class="btn-ghost">Cancelar</button>
+        <button id="btn-confirm-insert" class="btn-primary">Agregar</button>
+      </div>
+    </div>
   </div>
 
   <script src="/alarm.js"></script>
