@@ -119,7 +119,10 @@ Descripción opcional aquí"></textarea>
             <div class="timer-block timer-block--main">
               <div class="timer-label">Esta tarea</div>
               <div id="task-timer-wrap" class="task-timer-wrap">
-                <div id="task-timer" class="timer-main">00:00</div>
+                <div id="task-timer" class="timer-main" title="Clic para editar el tiempo">00:00</div>
+                <input id="task-timer-input" class="timer-main timer-main--edit hidden"
+                       type="text" inputmode="numeric" maxlength="8"
+                       aria-label="Editar tiempo restante (mm:ss)">
                 <div id="extra-badge" class="extra-badge hidden">+ TIEMPO EXTRA</div>
               </div>
               <div class="time-bar-track">
@@ -158,6 +161,7 @@ Descripción opcional aquí"></textarea>
         <div id="session-summary" class="session-summary hidden">
           <div class="summary-icon">🎉</div>
           <h2>¡Sesión completada!</h2>
+          <div id="summary-effective" class="summary-effective"></div>
           <div id="summary-stats" class="summary-stats"></div>
           <div id="summary-tasks" class="summary-tasks"></div>
           <button id="btn-new-session" class="btn-primary">↺ Nueva sesión</button>

@@ -556,9 +556,30 @@ tr:hover .cell-drag .tl-drag { opacity: .7; }
   color: var(--text);
   line-height: 1;
   transition: color 300ms var(--ease);
+  cursor: pointer;
+}
+/* Subtle hint that the timer is editable */
+#task-timer:hover {
+  text-decoration: underline;
+  text-underline-offset: 6px;
+  text-decoration-color: var(--border);
 }
 .timer-main.danger-pulse { color: var(--danger); animation: pulse 1s ease-in-out infinite; }
 .timer-main.extra-time   { color: var(--purple); }
+
+/* Inline edit input — identical visual weight as the timer text */
+.timer-main--edit {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--accent);
+  border-radius: 0;
+  padding: 0;
+  width: 5ch;        /* fits "00:00" and "0:00:00" */
+  outline: none;
+  caret-color: var(--accent);
+  text-align: center;
+}
+.timer-main--edit:focus { border-bottom-color: var(--accent); }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
@@ -974,6 +995,34 @@ tr:hover .cell-drag .tl-drag { opacity: .7; }
   width: 100%;
 }
 .summary-icon { font-size: 60px; margin-bottom: 16px; }
+
+/* Effective study time — the headline number in the summary */
+.summary-effective {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 20px;
+}
+.eff-value {
+  font-family: var(--font-mono);
+  font-size: 44px;
+  font-weight: 700;
+  letter-spacing: -2px;
+  color: var(--accent);
+  line-height: 1;
+}
+.eff-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  letter-spacing: .2px;
+}
+.eff-break {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
 .session-summary h2 { font-size: 28px; font-weight: 700; margin-bottom: 6px; letter-spacing: -.5px; }
 .summary-stats { color: var(--text-secondary); font-size: 14px; margin-bottom: 28px; }
 .summary-tasks {

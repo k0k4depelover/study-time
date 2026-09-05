@@ -379,6 +379,53 @@ function updateTaskTimerDisplay(taskRem, inExtra) {
   $('extra-badge').classList.toggle('hidden', !inExtra);
 }
 
+// ── Editable timer (click-to-edit, Windows-style) ─────────────────────────
+
+function openTimerEdit() {
+  if (!State.timer) return;
+  const display = $('task-timer');
+  const input   = $('task-timer-input');
+
+  // Pre-fill with current time text (e.g. "12:34")
+  input.value = display.textContent.trim();
+  display.classList.add('hidden');
+  input.classList.remove('hidden');
+
+  // Select all so user can type right over it
+  requestAnimationFrame(() => { input.focus(); input.select(); });
+}
+
+function closeTimerEdit() {
+  $('task-timer').classList.remove('hidden');
+  $('task-timer-input').classList.add('hidden');
+}
+
+/** Parse "M:SS", "MM:SS", "H:MM:SS", or a plain number as seconds */
+function _parseTimerInput(raw) {
+  const s = raw.trim();
+  const parts = s.split(':').map(Number);
+  if (parts.some(isNaN)) return null;
+  if (parts.length === 1) return parts[0];                          // bare seconds
+  if (parts.length === 2) return parts[0] * 60 + parts[1];          // M:SS
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]; // H:MM:SS
+  return null;
+}
+
+function confirmTimerEdit() {
+  const newSecs = _parseTimerInput($('task-timer-input').value);
+  closeTimerEdit();
+  if (newSecs === null || !State.timer || newSecs < 0) return;
+
+  const delta = newSecs - State.timer._taskRem;
+  State.timer._taskRem    = newSecs;
+  State.timer._sessionRem = Math.max(0, State.timer._sessionRem + delta);
+
+  // Refresh displays immediately
+  updateTaskTimerDisplay(State.timer._taskRem, State.timer._inExtra);
+  updateHeaderTimer(State.timer._sessionRem);
+  $('session-timer').textContent = SessionTimer.formatTime(State.timer._sessionRem, true);
+}
+
 function updateHeaderTimer(sessionRem) {
   $('header-session-time').textContent = SessionTimer.formatTime(sessionRem, true);
 }
@@ -438,13 +485,16 @@ function renderTaskList() {
   const currentIdx = State.timer?.currentIndex ?? -1;
 
   tasks.forEach((task, i) => {
-    const isPending = i > currentIdx;
+    // While paused: current slot + pending are all draggable.
+    // While running/ready: only strictly pending tasks.
+    const isPaused    = State.phase === 'paused';
+    const isDraggable = isPaused ? (i >= currentIdx) : (i > currentIdx);
 
     const div = document.createElement('div');
     div.className = 'task-item' + (task.isBreak ? ' is-break' : '');
     div.id = `tl-${i}`;
 
-    if (isPending) {
+    if (isDraggable) {
       div.draggable    = true;
       div.dataset.idx  = i;
       div.addEventListener('dragstart', _onDragStart);
@@ -455,7 +505,7 @@ function renderTaskList() {
     }
 
     const icon       = task.isBreak ? '⏸' : '○';
-    const dragHandle = isPending
+    const dragHandle = isDraggable
       ? `<span class="tl-drag" aria-hidden="true" title="Reordenar">⠿</span>`
       : `<span class="tl-drag tl-drag--hidden" aria-hidden="true"></span>`;
 
@@ -493,7 +543,10 @@ function _onDragOver(e) {
   e.dataTransfer.dropEffect = 'move';
   const toIdx      = parseInt(this.dataset.idx);
   const currentIdx = State.timer?.currentIndex ?? -1;
-  if (toIdx > currentIdx && toIdx !== _drag.fromIdx) {
+  // Paused: allow dropping at the current slot too (swap tasks freely)
+  // Running/ready: only strictly pending slots
+  const minDropIdx = State.phase === 'paused' ? currentIdx : currentIdx + 1;
+  if (toIdx >= minDropIdx && toIdx !== _drag.fromIdx) {
     _drag.toIdx = toIdx;
     $$('.task-item.drag-over').forEach(el => el.classList.remove('drag-over'));
     this.classList.add('drag-over');
@@ -522,13 +575,22 @@ function _onDragEnd() {
 // ── Task mutation helpers ──────────────────────────────────────────────────
 
 /**
- * Reorder a pending task from fromIdx to toIdx.
- * Only operates on tasks past the current one.
+ * Reorder tasks.
+ * - Running/ready: only pending tasks (strictly after current) may move.
+ * - Paused: current task slot is also flexible — any task at index >= currentIdx.
+ *   If the task at the current slot changes, the task timer resets to the
+ *   new task's full duration and the task card updates.
  */
 function _moveTask(fromIdx, toIdx) {
   const currentIdx = State.timer?.currentIndex ?? -1;
-  if (fromIdx <= currentIdx || toIdx <= currentIdx) return;
+  const isPaused   = State.phase === 'paused';
+  const minIdx     = isPaused ? currentIdx : currentIdx + 1;
+
+  if (fromIdx < minIdx || toIdx < minIdx) return;
   if (fromIdx === toIdx) return;
+
+  // Remember which task object is currently active before the splice
+  const prevCurrentTask = currentIdx >= 0 ? State.tasks[currentIdx] : null;
 
   const [task] = State.tasks.splice(fromIdx, 1);
   State.tasks.splice(toIdx, 0, task);
@@ -536,6 +598,14 @@ function _moveTask(fromIdx, toIdx) {
   if (State.timer) {
     const [t] = State.timer.tasks.splice(fromIdx, 1);
     State.timer.tasks.splice(toIdx, 0, t);
+
+    // If the task in the active slot changed, reset the task timer to the
+    // new task's full duration and refresh the task card
+    const newCurrentTask = State.tasks[currentIdx];
+    if (newCurrentTask && newCurrentTask !== prevCurrentTask) {
+      State.timer._taskRem = newCurrentTask.minutes * 60;
+      updateTaskCard();
+    }
   }
 
   renderTaskList();
@@ -652,6 +722,7 @@ function updateTaskListSummary() {
 // ═══════════════════════════════════════════════════════════════ Phase / button state
 
 function setPhase(phase) {
+  const prevPhase = State.phase;
   State.phase = phase;
   const btn = $('btn-start-pause');
   switch (phase) {
@@ -668,6 +739,10 @@ function setPhase(phase) {
     case 'done':
       btn.textContent = '✓ Listo';   btn.disabled = true;  break;
   }
+  // Re-render task list when entering or leaving paused state
+  // so drag handles on the current task appear/disappear correctly
+  const affectsHandles = phase === 'paused' || prevPhase === 'paused';
+  if (affectsHandles && State.tasks.length > 0) renderTaskList();
 }
 
 // ═══════════════════════════════════════════════════════════════ Session controls
@@ -690,6 +765,15 @@ function initSessionControls() {
       updateTaskListSummary();
     });
   });
+
+  // Click-to-edit timer (Windows-style)
+  $('task-timer').addEventListener('click', openTimerEdit);
+  const inp = $('task-timer-input');
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); confirmTimerEdit(); }
+    if (e.key === 'Escape') { e.preventDefault(); closeTimerEdit(); }
+  });
+  inp.addEventListener('blur', confirmTimerEdit);
 }
 
 function onStartPause() {
@@ -867,27 +951,51 @@ function showSummary(tasks) {
   $('task-card').classList.add('hidden');
   $('session-idle').classList.add('hidden');
 
-  const total     = tasks.reduce((s, t) => s + t.minutes, 0);
-  const completed = tasks.filter(t => t.completion === 100).length;
-  const avgPct    = tasks.length
-    ? Math.round(tasks.reduce((s, t) => s + t.completion, 0) / tasks.length)
+  const studyTasks  = tasks.filter(t => !t.isBreak);
+  const breakTasks  = tasks.filter(t =>  t.isBreak);
+
+  // Effective study time: planned + extra, breaks excluded
+  const studyMins = studyTasks.reduce((s, t) => s + t.minutes + (t.extraMinutes || 0), 0);
+  const breakMins = breakTasks.reduce((s, t) => s + t.minutes, 0);
+  const totalMins = tasks.reduce((s, t) => s + t.minutes, 0);
+
+  const completed = studyTasks.filter(t => t.completion === 100).length;
+  const avgPct    = studyTasks.length
+    ? Math.round(studyTasks.reduce((s, t) => s + t.completion, 0) / studyTasks.length)
     : 0;
 
+  // Format helper: "Xh Ymin" or "Y min"
+  const fmtMins = m => {
+    const h = Math.floor(m / 60), rem = m % 60;
+    return h > 0 ? `${h}h ${rem > 0 ? rem + 'min' : ''}`.trim() : `${rem} min`;
+  };
+
   $('summary-stats').innerHTML =
-    `<strong>${completed}</strong> de <strong>${tasks.length}</strong> tareas al 100% &nbsp;·&nbsp; ` +
+    `<strong>${completed}</strong> de <strong>${studyTasks.length}</strong> tareas al 100% &nbsp;·&nbsp; ` +
     `Promedio <strong>${avgPct}%</strong> &nbsp;·&nbsp; ` +
-    `<strong>${total} min</strong> planificados`;
+    `<strong>${totalMins} min</strong> planificados`;
+
+  // Effective study time highlight — the headline number
+  const effectiveEl = $('summary-effective');
+  if (effectiveEl) {
+    effectiveEl.innerHTML =
+      `<span class="eff-value">${fmtMins(studyMins)}</span>` +
+      `<span class="eff-label">de estudio efectivo</span>` +
+      (breakMins > 0 ? `<span class="eff-break">+ ${fmtMins(breakMins)} de descanso</span>` : '');
+  }
 
   let html = '';
-  tasks.forEach(task => {
+  // Only render non-break tasks in the per-task breakdown
+  studyTasks.forEach(task => {
     const colorClass = task.completion >= 100 ? 'p100'
-      : task.completion >= 75 ? 'p75'
-      : task.completion >= 50 ? 'p50'
-      : task.completion >= 25 ? 'p25' : '';
+      : task.completion >= 75  ? 'p75'
+      : task.completion >= 50  ? 'p50'
+      : task.completion >= 25  ? 'p25' : '';
+    const mins = task.minutes + (task.extraMinutes || 0);
     html += `
       <div class="summary-task">
         <span class="summary-name">${_esc(task.name)}</span>
-        <span class="summary-mins">${task.minutes + task.extraMinutes} min</span>
+        <span class="summary-mins">${mins} min</span>
         <div class="summary-bar-track">
           <div class="summary-bar-fill ${colorClass}" style="width:${task.completion}%;background:var(--${colorClass === 'p100' || colorClass === 'p75' ? 'success' : 'warning'})"></div>
         </div>
