@@ -1134,3 +1134,27 @@ tr:hover .cell-drag .tl-drag { opacity: .7; }
     transition-duration: .01ms !important;
   }
 }
+
+.ti-delete { font-size: 14px; cursor: pointer; color: var(--text-faint); margin-left: 8px; opacity: 0; transition: opacity 0.2s; }
+.task-item:hover .ti-delete { opacity: 1; }
+.ti-delete:hover { color: var(--danger); }
+.ti-name[contenteditable="true"], .ti-time[contenteditable="true"], .task-name[contenteditable="true"] { outline: none; border-bottom: 1px solid var(--accent); cursor: text; }
+.task-name { cursor: pointer; }
+
+
+.ti-time { cursor: pointer; }
+
+
+.tl-add-row { display: flex; align-items: center; padding: 12px; margin: 4px 12px; border-radius: 8px; cursor: pointer; color: var(--accent); opacity: 0.8; font-size: 13px; font-weight: 500; transition: background 0.15s, opacity 0.15s; border: 1px dashed var(--border); }
+.tl-add-row:hover { background: var(--surface-hover); opacity: 1; }
+.tl-add-row .ti-icon { width: 18px; text-align: center; margin-right: 8px; }
+
+
+select option { background-color: var(--surface) !important; color: var(--text) !important; }
+
+
+.task-timer-group { display: flex; align-items: baseline; gap: 12px; margin-bottom: -4px; }
+.timer-elapsed { font-family: var(--font-mono); font-size: 56px; font-weight: 700; letter-spacing: -3px; color: var(--text-faint); font-variant-numeric: tabular-nums; cursor: default; }
+.timer-separator { font-family: var(--font-sans); font-size: 40px; font-weight: 300; color: var(--border); padding-bottom: 6px; }
+@media (max-width: 500px) { .timer-elapsed { font-size: 40px; } .timer-separator { font-size: 32px; } .timer-main { font-size: 40px !important; } }
+

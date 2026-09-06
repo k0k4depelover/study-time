@@ -17,7 +17,7 @@ class SessionTimer {
    */
   constructor(tasks) {
     // Deep-clone tasks so we can store completion state here
-    this._tasks = tasks.map(t => ({ ...t, completion: 0, extraMinutes: 0 }));
+    this._tasks = tasks.map(t => ({ ...t, completion: 0, extraMinutes: 0, spentSeconds: 0 }));
 
     this._index   = 0;
     this._running = false;
@@ -25,6 +25,8 @@ class SessionTimer {
     this._lastMs  = null;
     this._timerId = null;
     this._inExtra = false;
+    this._taskEndedFired = false;
+    this._sessionEndedFired = false;
 
     const totalSec = this._tasks.reduce((s, t) => s + t.minutes * 60, 0);
     this._sessionRem = totalSec;
@@ -97,6 +99,7 @@ class SessionTimer {
     this._taskRem    += secs;
     this._sessionRem += secs;
     this._inExtra     = true;
+    this._taskEndedFired = false;
     if (this.currentTask) this.currentTask.extraMinutes += minutes;
     this._emit();
     if (!this._running) this.resume();
@@ -139,23 +142,26 @@ class SessionTimer {
 
     this._taskRem    = Math.max(0, this._taskRem    - elapsed);
     this._sessionRem = Math.max(0, this._sessionRem - elapsed);
+    if (this.currentTask) this.currentTask.spentSeconds += elapsed;
 
     this._emit();
 
-    // Task timer reached zero
-    if (this._taskRem <= 0) {
-      this._clearTimer();
-      this._running = false;
-      this._inExtra = false;
-      if (this.onTaskEnd) this.onTaskEnd(this.currentTask, this.nextTask);
-      return;
-    }
-
     // Session timer reached zero (ran out of total time)
-    if (this._sessionRem <= 0) {
+    if (this._sessionRem <= 0 && !this._sessionEndedFired) {
+      this._sessionEndedFired = true;
       this._clearTimer();
       this._running = false;
       if (this.onSessionEnd) this.onSessionEnd(this._tasks);
+      return;
+    }
+
+    // Task timer reached zero
+    if (this._taskRem <= 0 && !this._taskEndedFired) {
+      this._taskEndedFired = true;
+      this._inExtra = false;
+      if (this.onTaskEnd) this.onTaskEnd(this.currentTask, this.nextTask);
+      // NOTE: We DO NOT clear the timer or stop running!
+      // This allows spentSeconds to continue incrementing while waiting for user action.
     }
   }
 
@@ -166,6 +172,7 @@ class SessionTimer {
   _advance() {
     this._clearTimer();
     this._inExtra = false;
+    this._taskEndedFired = false;
     this._index++;
 
     if (this._index >= this._tasks.length) {
@@ -176,7 +183,7 @@ class SessionTimer {
 
     // Set up next task
     const next = this._tasks[this._index];
-    this._taskRem = next.minutes * 60;
+    this._taskRem = next.savedRem !== undefined ? next.savedRem : next.minutes * 60;
     this._emit();
     this.resume();
   }

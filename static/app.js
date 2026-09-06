@@ -428,6 +428,12 @@ function confirmTimerEdit() {
 
 function updateHeaderTimer(sessionRem) {
   $('header-session-time').textContent = SessionTimer.formatTime(sessionRem, true);
+  if (State.timer) {
+    const effectiveTotal = State.timer.tasks
+      .filter(t => !t.isBreak)
+      .reduce((sum, t) => sum + (t.spentSeconds || 0), 0);
+    $('session-effective').textContent = SessionTimer.formatTime(effectiveTotal, true);
+  }
 }
 
 function updateTaskCard() {
@@ -509,12 +515,17 @@ function renderTaskList() {
       ? `<span class="tl-drag" aria-hidden="true" title="Reordenar">⠿</span>`
       : `<span class="tl-drag tl-drag--hidden" aria-hidden="true"></span>`;
 
+    const deleteBtn = isDraggable
+      ? `<span class="ti-delete" aria-hidden="true" title="Eliminar">✕</span>`
+      : ``;
+
     div.innerHTML = `
       <div class="ti-header">
         ${dragHandle}
         <span class="ti-icon" id="ti-icon-${i}">${icon}</span>
-        <span class="ti-name">${_esc(task.name)}</span>
+        <span class="ti-name" title="Doble click para editar nombre">${_esc(task.name)}</span>
         <span class="ti-time">${task.minutes} min</span>
+        ${deleteBtn}
       </div>
       ${task.description && !task.isBreak ? `<div class="ti-desc">${_esc(task.description)}</div>` : ''}
       <div class="ti-progress-track">
@@ -523,7 +534,104 @@ function renderTaskList() {
       <div class="ti-pct-label" id="ti-pct-${i}"></div>
     `;
     list.appendChild(div);
+
+    // Double click to edit name
+    const nameSpan = div.querySelector('.ti-name');
+    nameSpan.addEventListener('dblclick', () => {
+      div.draggable = false;
+      nameSpan.contentEditable = true;
+      nameSpan.focus();
+      const range = document.createRange();
+      range.selectNodeContents(nameSpan);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+    
+    nameSpan.addEventListener('blur', () => {
+      nameSpan.contentEditable = false;
+      if (isDraggable) div.draggable = true;
+      const newName = nameSpan.textContent.trim();
+      if (newName) {
+        State.tasks[i].name = newName;
+        if (State.timer) State.timer.tasks[i].name = newName;
+        if (i === (State.timer?.currentIndex ?? -1)) updateTaskCard();
+      } else {
+        nameSpan.textContent = State.tasks[i].name;
+      }
+    });
+
+    nameSpan.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); nameSpan.blur(); }
+      if (e.key === 'Escape') {
+        nameSpan.textContent = task.name;
+        nameSpan.contentEditable = false;
+        if (isDraggable) div.draggable = true;
+      }
+    });
+
+    // Double click to edit time
+    const timeSpan = div.querySelector('.ti-time');
+    timeSpan.title = "Doble click para editar tiempo";
+    timeSpan.addEventListener('dblclick', () => {
+      div.draggable = false;
+      timeSpan.contentEditable = true;
+      timeSpan.focus();
+      const range = document.createRange();
+      range.selectNodeContents(timeSpan);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+    
+    timeSpan.addEventListener('blur', () => {
+      timeSpan.contentEditable = false;
+      if (isDraggable) div.draggable = true;
+      const raw = timeSpan.textContent.replace(/[^0-9]/g, '');
+      const newMins = parseInt(raw);
+      if (newMins > 0) {
+        const delta = newMins - task.minutes;
+        State.tasks[i].minutes = newMins;
+        if (State.timer) {
+          State.timer.tasks[i].minutes = newMins;
+          State.timer._sessionRem += delta * 60;
+          if (i === State.timer.currentIndex && State.timer.tasks[i].savedRem === undefined) {
+             State.timer._taskRem += delta * 60;
+          }
+        }
+        timeSpan.textContent = `${newMins} min`;
+        if (i === (State.timer?.currentIndex ?? -1)) updateTaskCard();
+        updateHeaderTimer(State.timer ? State.timer.sessionRemaining : State.tasks.reduce((s,t)=>s+t.minutes*60,0));
+      } else {
+        timeSpan.textContent = `${task.minutes} min`;
+      }
+    });
+
+    timeSpan.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); timeSpan.blur(); }
+      if (e.key === 'Escape') {
+        timeSpan.textContent = `${task.minutes} min`;
+        timeSpan.contentEditable = false;
+        if (isDraggable) div.draggable = true;
+      }
+    });
+
+    // Delete button
+    const delBtnEl = div.querySelector('.ti-delete');
+    if (delBtnEl) {
+      delBtnEl.addEventListener('click', () => _deleteTask(i));
+    }
   });
+
+  // Add the explicit "Add Task" button at the bottom of the list
+  const addRow = document.createElement('div');
+  addRow.className = 'tl-add-row';
+  addRow.innerHTML = `
+    <span class="ti-icon">＋</span>
+    <span>Agregar tarea...</span>
+  `;
+  addRow.addEventListener('click', openInsertTaskModal);
+  list.appendChild(addRow);
 
   updateTaskListHighlight();
   updateTaskListSummary();
@@ -574,6 +682,44 @@ function _onDragEnd() {
 
 // ── Task mutation helpers ──────────────────────────────────────────────────
 
+function _deleteTask(index) {
+  if (index < 0 || index >= State.tasks.length) return;
+  const currentIdx = State.timer?.currentIndex ?? -1;
+  const isPaused   = State.phase === 'paused';
+  const minIdx     = isPaused ? currentIdx : currentIdx + 1;
+  
+  if (index < minIdx) return; // cannot delete done/running tasks unless paused and it's the current one
+  
+  const [task] = State.tasks.splice(index, 1);
+  if (State.timer) {
+    let rem = task.minutes * 60;
+    if (index === currentIdx) {
+      rem = State.timer._taskRem;
+    } else if (task.savedRem !== undefined) {
+      rem = task.savedRem;
+    }
+    
+    State.timer.tasks.splice(index, 1);
+    State.timer._sessionRem = Math.max(0, State.timer._sessionRem - rem);
+    
+    if (index === currentIdx) {
+      const newCurrentTask = State.tasks[currentIdx];
+      if (newCurrentTask) {
+        State.timer._taskRem = newCurrentTask.savedRem !== undefined 
+            ? newCurrentTask.savedRem 
+            : newCurrentTask.minutes * 60;
+      } else {
+        State.timer._taskRem = 0;
+      }
+      updateTaskCard();
+    }
+  }
+
+  renderTaskList();
+  updateTaskListHighlight();
+  updateTaskListSummary();
+}
+
 /**
  * Reorder tasks.
  * - Running/ready: only pending tasks (strictly after current) may move.
@@ -603,7 +749,15 @@ function _moveTask(fromIdx, toIdx) {
     // new task's full duration and refresh the task card
     const newCurrentTask = State.tasks[currentIdx];
     if (newCurrentTask && newCurrentTask !== prevCurrentTask) {
-      State.timer._taskRem = newCurrentTask.minutes * 60;
+      // Save current progress on the old task
+      if (prevCurrentTask) {
+        prevCurrentTask.savedRem = State.timer._taskRem;
+      }
+      // Load progress on the new task (or full duration)
+      State.timer._taskRem = newCurrentTask.savedRem !== undefined 
+          ? newCurrentTask.savedRem 
+          : newCurrentTask.minutes * 60;
+      
       updateTaskCard();
     }
   }
@@ -751,6 +905,7 @@ function initSessionControls() {
   $('btn-start-pause').addEventListener('click', onStartPause);
   $('btn-skip').addEventListener('click', onSkip);
   $('btn-reset').addEventListener('click', onReset);
+  $('btn-end-session').addEventListener('click', onEndSessionEarly);
   $('btn-extra-time').addEventListener('click', () => openExtraModal());
   $('btn-new-session').addEventListener('click', resetApp);
 
@@ -774,6 +929,48 @@ function initSessionControls() {
     if (e.key === 'Escape') { e.preventDefault(); closeTimerEdit(); }
   });
   inp.addEventListener('blur', confirmTimerEdit);
+
+  // Double click to edit current task title
+  const taskName = $('task-name');
+  if (taskName) {
+    taskName.title = "Doble click para editar nombre";
+    taskName.addEventListener('dblclick', () => {
+      taskName.contentEditable = true;
+      taskName.focus();
+      const range = document.createRange();
+      range.selectNodeContents(taskName);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+    
+    taskName.addEventListener('blur', _commitTaskName);
+    taskName.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); taskName.blur(); }
+      if (e.key === 'Escape') { 
+         const currentIdx = State.timer?.currentIndex ?? -1;
+         if (currentIdx >= 0) taskName.textContent = State.tasks[currentIdx].name;
+         taskName.contentEditable = false;
+      }
+    });
+  }
+}
+
+function _commitTaskName() {
+  const taskName = $('task-name');
+  if (!taskName) return;
+  taskName.contentEditable = false;
+  const currentIdx = State.timer?.currentIndex ?? -1;
+  if (currentIdx >= 0) {
+    const newName = taskName.textContent.trim();
+    if (newName) {
+      State.tasks[currentIdx].name = newName;
+      if (State.timer) State.timer.tasks[currentIdx].name = newName;
+      renderTaskList();
+    } else {
+      taskName.textContent = State.tasks[currentIdx].name;
+    }
+  }
 }
 
 function onStartPause() {
@@ -807,6 +1004,12 @@ function onReset() {
   if (State.timer) { State.timer.pause(); State.timer = null; }
   const tasks = State.tasks.map(t => ({ ...t, completion: 0, extraMinutes: 0 }));
   loadSession(tasks);
+}
+
+function onEndSessionEarly() {
+  if (!confirm('¿Terminar la sesión ahora y ver el resumen?')) return;
+  if (State.timer) State.timer.pause();
+  onSessionEnd(State.timer ? State.timer.tasks : State.tasks);
 }
 
 function resetApp() {
@@ -954,9 +1157,21 @@ function showSummary(tasks) {
   const studyTasks  = tasks.filter(t => !t.isBreak);
   const breakTasks  = tasks.filter(t =>  t.isBreak);
 
-  // Effective study time: planned + extra, breaks excluded
-  const studyMins = studyTasks.reduce((s, t) => s + t.minutes + (t.extraMinutes || 0), 0);
-  const breakMins = breakTasks.reduce((s, t) => s + t.minutes, 0);
+  // Effective study time: actual time spent, breaks excluded
+  const studyMins = studyTasks.reduce((s, t) => {
+    // If spentSeconds is tracked, use it.
+    // Fallback (for older stored states if they exist): minutes + extraMinutes
+    if (t.spentSeconds !== undefined) {
+      return s + Math.round(t.spentSeconds / 60);
+    }
+    return s + t.minutes + (t.extraMinutes || 0);
+  }, 0);
+
+  const breakMins = breakTasks.reduce((s, t) => {
+    if (t.spentSeconds !== undefined) return s + Math.round(t.spentSeconds / 60);
+    return s + t.minutes;
+  }, 0);
+  
   const totalMins = tasks.reduce((s, t) => s + t.minutes, 0);
 
   const completed = studyTasks.filter(t => t.completion === 100).length;
@@ -1232,6 +1447,7 @@ function restoreSession(saved) {
     milestones:   t.milestones   || [100],
     extraMinutes: t.extraMinutes || 0,
     completion:   t.completion   || 0,
+    spentSeconds: t.spentSeconds || 0,
   }));
   if (!tasks.length) return;
 

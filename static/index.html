@@ -109,7 +109,10 @@ Descripción opcional aquí"></textarea>
         <div id="task-card" class="task-card hidden">
 
           <div class="task-card-top">
-            <span id="task-index-badge" class="task-index-badge"></span>
+            <div class="task-card-badges" style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center;">
+              <span id="task-index-badge" class="task-index-badge" style="margin-bottom: 0;"></span>
+              <span id="session-effective" class="task-index-badge" style="margin-bottom: 0; background: transparent; border: 1px solid var(--accent); color: var(--accent); font-family: var(--font-mono); font-weight: 600;" title="Estudio efectivo total">0:00:00</span>
+            </div>
             <h2 id="task-name" class="task-name"></h2>
             <p id="task-desc" class="task-desc"></p>
           </div>
@@ -130,9 +133,9 @@ Descripción opcional aquí"></textarea>
               </div>
             </div>
             <div class="timer-block timer-block--side">
-              <div class="timer-label">Sesión total</div>
+              <div class="timer-label">Sesión restante</div>
               <div id="session-timer" class="timer-side">0:00:00</div>
-              <div class="timer-label" style="margin-top:6px" id="tasks-remaining-label"></div>
+              <div class="timer-label" style="margin-top:12px" id="tasks-remaining-label"></div>
             </div>
           </div>
 
@@ -152,7 +155,8 @@ Descripción opcional aquí"></textarea>
             <button id="btn-start-pause" class="btn-primary btn-xl">▶ Iniciar</button>
             <button id="btn-extra-time" class="btn-secondary" title="Agregar tiempo extra a esta tarea">⏱ Extra</button>
             <button id="btn-skip" class="btn-ghost" title="Marcar como terminada e ir a la siguiente">⟶ Siguiente</button>
-            <button id="btn-reset" class="btn-ghost btn-danger-ghost" title="Reiniciar sesión">↺</button>
+            <button id="btn-end-session" class="btn-ghost btn-danger-ghost" title="Terminar sesión">⬛</button>
+            <button id="btn-reset" class="btn-ghost" title="Reiniciar sesión">↺</button>
           </div>
 
         </div><!-- /task-card -->
