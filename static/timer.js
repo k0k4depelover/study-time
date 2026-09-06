@@ -17,7 +17,12 @@ class SessionTimer {
    */
   constructor(tasks) {
     // Deep-clone tasks so we can store completion state here
-    this._tasks = tasks.map(t => ({ ...t, completion: 0, extraMinutes: 0, spentSeconds: 0 }));
+    this._tasks = tasks.map(t => ({ 
+      ...t, 
+      completion: t.completion || 0, 
+      extraMinutes: t.extraMinutes || 0, 
+      spentSeconds: t.spentSeconds || 0 
+    }));
 
     this._index   = 0;
     this._running = false;

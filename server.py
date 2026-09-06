@@ -32,11 +32,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
 
 # ── Windows cp1252 fix ───────────────────────────────────────────────────────
-if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
-    try:
+try:
+    if sys.stdout and getattr(sys.stdout, "encoding", None) and sys.stdout.encoding.lower() != "utf-8":
         sys.stdout.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
+except Exception:
+    pass
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 # When running as a PyInstaller bundle, __file__ points to a temp extraction
