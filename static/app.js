@@ -595,8 +595,10 @@ function renderTaskList() {
         if (State.timer) {
           State.timer.tasks[i].minutes = newMins;
           State.timer._sessionRem += delta * 60;
-          if (i === State.timer.currentIndex && State.timer.tasks[i].savedRem === undefined) {
+          if (i === State.timer.currentIndex) {
              State.timer._taskRem += delta * 60;
+          } else if (State.timer.tasks[i].savedRem !== undefined) {
+             State.timer.tasks[i].savedRem = Math.max(0, State.timer.tasks[i].savedRem + delta * 60);
           }
         }
         timeSpan.textContent = `${newMins} min`;
@@ -703,11 +705,11 @@ function _deleteTask(index) {
     State.timer._sessionRem = Math.max(0, State.timer._sessionRem - rem);
     
     if (index === currentIdx) {
-      const newCurrentTask = State.tasks[currentIdx];
-      if (newCurrentTask) {
-        State.timer._taskRem = newCurrentTask.savedRem !== undefined 
-            ? newCurrentTask.savedRem 
-            : newCurrentTask.minutes * 60;
+      const newCurrentTimerTask = State.timer.tasks[currentIdx];
+      if (newCurrentTimerTask) {
+        State.timer._taskRem = newCurrentTimerTask.savedRem !== undefined 
+            ? newCurrentTimerTask.savedRem 
+            : newCurrentTimerTask.minutes * 60;
       } else {
         State.timer._taskRem = 0;
       }
@@ -742,21 +744,23 @@ function _moveTask(fromIdx, toIdx) {
   State.tasks.splice(toIdx, 0, task);
 
   if (State.timer) {
+    const prevCurrentTimerTask = currentIdx >= 0 ? State.timer.tasks[currentIdx] : null;
+
     const [t] = State.timer.tasks.splice(fromIdx, 1);
     State.timer.tasks.splice(toIdx, 0, t);
 
     // If the task in the active slot changed, reset the task timer to the
     // new task's full duration and refresh the task card
-    const newCurrentTask = State.tasks[currentIdx];
-    if (newCurrentTask && newCurrentTask !== prevCurrentTask) {
+    const newCurrentTimerTask = State.timer.tasks[currentIdx];
+    if (newCurrentTimerTask && newCurrentTimerTask !== prevCurrentTimerTask) {
       // Save current progress on the old task
-      if (prevCurrentTask) {
-        prevCurrentTask.savedRem = State.timer._taskRem;
+      if (prevCurrentTimerTask) {
+        prevCurrentTimerTask.savedRem = State.timer._taskRem;
       }
       // Load progress on the new task (or full duration)
-      State.timer._taskRem = newCurrentTask.savedRem !== undefined 
-          ? newCurrentTask.savedRem 
-          : newCurrentTask.minutes * 60;
+      State.timer._taskRem = newCurrentTimerTask.savedRem !== undefined 
+          ? newCurrentTimerTask.savedRem 
+          : newCurrentTimerTask.minutes * 60;
       
       updateTaskCard();
     }
@@ -951,6 +955,51 @@ function initSessionControls() {
          const currentIdx = State.timer?.currentIndex ?? -1;
          if (currentIdx >= 0) taskName.textContent = State.tasks[currentIdx].name;
          taskName.contentEditable = false;
+      }
+    });
+  }
+
+  // Double click to edit global effective time
+  const sessionEff = $('session-effective');
+  if (sessionEff) {
+    sessionEff.title = "Doble click para corregir tiempo (H:MM:SS)";
+    sessionEff.addEventListener('dblclick', () => {
+      if (!State.timer) return;
+      sessionEff.contentEditable = true;
+      sessionEff.focus();
+      const range = document.createRange();
+      range.selectNodeContents(sessionEff);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+
+    const finishEditEff = () => {
+      sessionEff.contentEditable = false;
+      if (!State.timer || !State.timer.currentTask) return;
+      
+      const newSecs = _parseTimerInput(sessionEff.textContent);
+      if (newSecs !== null && newSecs >= 0) {
+        const currentTotal = State.timer.tasks
+          .filter(t => !t.isBreak)
+          .reduce((sum, t) => sum + (t.spentSeconds || 0), 0);
+          
+        const delta = newSecs - currentTotal;
+        State.timer.currentTask.spentSeconds = Math.max(0, State.timer.currentTask.spentSeconds + delta);
+        
+        updateHeaderTimer(State.timer.sessionRemaining);
+      } else {
+        updateHeaderTimer(State.timer.sessionRemaining);
+      }
+    };
+
+    sessionEff.addEventListener('blur', finishEditEff);
+    sessionEff.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); sessionEff.blur(); }
+      if (e.key === 'Escape') { 
+        e.preventDefault(); 
+        sessionEff.contentEditable = false;
+        updateHeaderTimer(State.timer ? State.timer.sessionRemaining : 0);
       }
     });
   }
