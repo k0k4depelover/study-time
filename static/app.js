@@ -328,16 +328,12 @@ function onTick(sessionRem, taskRem, inExtra) {
   updateHeaderTimer(sessionRem);
   $('session-timer').textContent = SessionTimer.formatTime(sessionRem, true);
 
-  // Time bar
+  // Focus ring
   if (State.timer) {
     const task     = State.timer.currentTask;
     const totalSec = (task.minutes + task.extraMinutes) * 60;
-    const elapsed  = totalSec - taskRem;
-    const pct      = Math.min(100, (elapsed / totalSec) * 100);
-    const bar      = $('task-time-bar');
-    bar.style.width = `${pct}%`;
-    bar.className   = 'time-bar-fill' +
-      (inExtra ? ' extra' : pct >= 90 ? ' danger' : pct >= 70 ? ' warn' : '');
+    const pct      = Math.min(100, ((totalSec - taskRem) / totalSec) * 100);
+    updateTimerRing(taskRem, totalSec, inExtra, pct);
 
     // Tick sound in last 30 s
     if (!inExtra && taskRem <= 30 && Math.round(taskRem) % 5 === 0) {
@@ -349,6 +345,16 @@ function onTick(sessionRem, taskRem, inExtra) {
     timerEl.classList.toggle('danger-pulse', !inExtra && taskRem <= 30);
     timerEl.classList.toggle('extra-time',   inExtra);
   }
+}
+
+const RING_CIRCUMFERENCE = 2 * Math.PI * 66;
+
+function updateTimerRing(taskRem, totalSec, inExtra, pct) {
+  const ring = $('timer-ring-progress');
+  const frac = totalSec > 0 ? Math.max(0, Math.min(1, taskRem / totalSec)) : 0;
+  ring.style.strokeDashoffset = RING_CIRCUMFERENCE * (1 - frac);
+  ring.classList.toggle('danger', !inExtra && pct >= 90);
+  ring.classList.toggle('extra',  inExtra);
 }
 
 function onTaskEnd(task, nextTask) {
@@ -395,9 +401,18 @@ function openTimerEdit() {
   requestAnimationFrame(() => { input.focus(); input.select(); });
 }
 
+let _cancelingTimerEdit = false;
+
 function closeTimerEdit() {
   $('task-timer').classList.remove('hidden');
   $('task-timer-input').classList.add('hidden');
+}
+
+/** Close the editor without applying the typed value. */
+function cancelTimerEdit() {
+  _cancelingTimerEdit = true;
+  closeTimerEdit(); // hiding the input fires 'blur', which we suppress via the flag above
+  _cancelingTimerEdit = false;
 }
 
 /** Parse "M:SS", "MM:SS", "H:MM:SS", or a plain number as seconds */
@@ -412,6 +427,7 @@ function _parseTimerInput(raw) {
 }
 
 function confirmTimerEdit() {
+  if (_cancelingTimerEdit) return; // Escape already closed the editor; don't re-apply the typed value
   const newSecs = _parseTimerInput($('task-timer-input').value);
   closeTimerEdit();
   if (newSecs === null || !State.timer || newSecs < 0) return;
@@ -419,6 +435,8 @@ function confirmTimerEdit() {
   const delta = newSecs - State.timer._taskRem;
   State.timer._taskRem    = newSecs;
   State.timer._sessionRem = Math.max(0, State.timer._sessionRem + delta);
+  // Allow the task-end flow to fire again if the extended time runs out a second time
+  if (newSecs > 0) State.timer._taskEndedFired = false;
 
   // Refresh displays immediately
   updateTaskTimerDisplay(State.timer._taskRem, State.timer._inExtra);
@@ -462,9 +480,9 @@ function updateTaskCard() {
   $('tasks-remaining-label').textContent =
     `${timer.totalTasks - timer.currentIndex - 1} restantes`;
 
-  // Reset time bar
-  $('task-time-bar').style.width = '0%';
-  $('task-time-bar').className   = 'time-bar-fill';
+  // Reset focus ring
+  const totalSec = (task.minutes + task.extraMinutes) * 60;
+  updateTimerRing(timer.taskRemaining, totalSec, false, 0);
   $('task-timer').classList.remove('danger-pulse', 'extra-time');
   $('extra-badge').classList.add('hidden');
 
@@ -930,7 +948,7 @@ function initSessionControls() {
   const inp = $('task-timer-input');
   inp.addEventListener('keydown', e => {
     if (e.key === 'Enter')  { e.preventDefault(); confirmTimerEdit(); }
-    if (e.key === 'Escape') { e.preventDefault(); closeTimerEdit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancelTimerEdit(); }
   });
   inp.addEventListener('blur', confirmTimerEdit);
 

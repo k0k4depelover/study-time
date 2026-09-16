@@ -109,9 +109,9 @@ Descripción opcional aquí"></textarea>
         <div id="task-card" class="task-card hidden">
 
           <div class="task-card-top">
-            <div class="task-card-badges" style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center;">
-              <span id="task-index-badge" class="task-index-badge" style="margin-bottom: 0;"></span>
-              <span id="session-effective" class="task-index-badge" style="margin-bottom: 0; background: transparent; border: 1px solid var(--accent); color: var(--accent); font-family: var(--font-mono); font-weight: 600;" title="Estudio efectivo total">0:00:00</span>
+            <div class="task-card-badges">
+              <span id="task-index-badge" class="task-index-badge"></span>
+              <span id="session-effective" class="task-index-badge task-index-badge--outline" title="Estudio efectivo total">0:00:00</span>
             </div>
             <h2 id="task-name" class="task-name"></h2>
             <p id="task-desc" class="task-desc"></p>
@@ -122,20 +122,23 @@ Descripción opcional aquí"></textarea>
             <div class="timer-block timer-block--main">
               <div class="timer-label">Esta tarea</div>
               <div id="task-timer-wrap" class="task-timer-wrap">
-                <div id="task-timer" class="timer-main" title="Clic para editar el tiempo">00:00</div>
-                <input id="task-timer-input" class="timer-main timer-main--edit hidden"
-                       type="text" inputmode="numeric" maxlength="8"
-                       aria-label="Editar tiempo restante (mm:ss)">
-                <div id="extra-badge" class="extra-badge hidden">+ TIEMPO EXTRA</div>
-              </div>
-              <div class="time-bar-track">
-                <div id="task-time-bar" class="time-bar-fill"></div>
+                <svg class="timer-ring" viewBox="0 0 148 148" aria-hidden="true">
+                  <circle class="timer-ring-track" cx="74" cy="74" r="66"></circle>
+                  <circle id="timer-ring-progress" class="timer-ring-progress" cx="74" cy="74" r="66"></circle>
+                </svg>
+                <div class="timer-ring-center">
+                  <div id="task-timer" class="timer-main" title="Clic para editar el tiempo">00:00</div>
+                  <input id="task-timer-input" class="timer-main timer-main--edit hidden"
+                         type="text" inputmode="numeric" maxlength="8"
+                         aria-label="Editar tiempo restante (mm:ss)">
+                </div>
+                <div id="extra-badge" class="extra-badge hidden">+ Tiempo extra</div>
               </div>
             </div>
             <div class="timer-block timer-block--side">
               <div class="timer-label">Sesión restante</div>
               <div id="session-timer" class="timer-side">0:00:00</div>
-              <div class="timer-label" style="margin-top:12px" id="tasks-remaining-label"></div>
+              <div class="timer-label timer-label--spaced" id="tasks-remaining-label"></div>
             </div>
           </div>
 

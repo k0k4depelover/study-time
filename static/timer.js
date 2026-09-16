@@ -176,12 +176,12 @@ class SessionTimer {
 
   _advance() {
     this._clearTimer();
+    this._running = false;
     this._inExtra = false;
     this._taskEndedFired = false;
     this._index++;
 
     if (this._index >= this._tasks.length) {
-      this._running = false;
       if (this.onSessionEnd) this.onSessionEnd(this._tasks);
       return;
     }
