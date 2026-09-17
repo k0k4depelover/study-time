@@ -21,19 +21,23 @@
   --text-muted:  rgba(29,29,31,.46);
   --text-faint:  rgba(29,29,31,.32);
 
-  /* Indigo — the one accent, spent on progress, focus, and the ring only */
-  --accent:      #5856d6;
-  --accent-dim:  rgba(88,86,214,.12);
-  --accent-dark: #46449c;
+  /* Ink — a studious deep blue, spent on focus, the ring, and text accents only.
+     --accent is the on-surface tone (text/icon/ring); --accent-dark is the
+     solid-fill tone for buttons, kept separate so white button labels always
+     clear 4.5:1 even where the on-surface tone would not. */
+  --accent:      #24476e;
+  --accent-dim:  rgba(36,71,110,.12);
+  --accent-dark: #24476e;
 
-  --success:     #248a3d;
-  --success-dim: rgba(36,138,61,.12);
-  --warning:     #c96a00;
-  --warning-dim: rgba(201,106,0,.12);
-  --danger:      #d70015;
-  --danger-dim:  rgba(215,0,21,.10);
-  --extra:       #8944ab;
-  --extra-dim:   rgba(137,68,171,.12);
+  /* Brass — the progress/milestone hue, graduating into success as tasks complete */
+  --success:     #1f7a46;
+  --success-dim: rgba(31,122,70,.12);
+  --warning:     #8a5a12;
+  --warning-dim: rgba(138,90,18,.12);
+  --danger:      #a8341f;
+  --danger-dim:  rgba(168,52,31,.10);
+  --extra:       #7a3b62;
+  --extra-dim:   rgba(122,59,98,.12);
 
   --radius:      10px;
   --radius-lg:   16px;
@@ -70,18 +74,18 @@
     --text-muted:  rgba(235,235,245,.44);
     --text-faint:  rgba(235,235,245,.30);
 
-    --accent:      #7d7aff;
-    --accent-dim:  rgba(125,122,255,.18);
-    --accent-dark: #a5a3ff;
+    --accent:      #86aedd;
+    --accent-dim:  rgba(134,174,221,.20);
+    --accent-dark: #2f5f8f;
 
-    --success:     #32d74b;
-    --success-dim: rgba(50,215,75,.16);
-    --warning:     #ff9f0a;
-    --warning-dim: rgba(255,159,10,.16);
-    --danger:      #ff453a;
-    --danger-dim:  rgba(255,69,58,.16);
-    --extra:       #cd7cf0;
-    --extra-dim:   rgba(205,124,240,.16);
+    --success:     #3ddc84;
+    --success-dim: rgba(61,220,132,.16);
+    --warning:     #e0ae55;
+    --warning-dim: rgba(224,174,85,.16);
+    --danger:      #ff6b55;
+    --danger-dim:  rgba(255,107,85,.16);
+    --extra:       #e28fc0;
+    --extra-dim:   rgba(226,143,192,.18);
 
     --shadow-sm:  0 2px 8px rgba(0,0,0,.5);
     --shadow:     0 8px 32px rgba(0,0,0,.6);
@@ -212,6 +216,42 @@ kbd {
   max-width: 900px;
   margin: 0 auto;
   padding: 24px 24px 18px;
+}
+
+/* Hero state: when the setup screen is the only thing on screen (no session
+   running yet), it floats as a lit card over a quiet field instead of sitting
+   in a bar with dead space below it. Scoped off the moment a session is live,
+   so re-opening "Plan" mid-session still behaves as a plain inline bar. */
+body:has(#session-view.hidden) #import-section {
+  min-height: calc(100vh - 52px);
+  max-height: calc(100vh - 52px);
+  display: flex;
+  /* align-items stays flex-start; the card centers itself via auto margins
+     below so a long task table can never get clipped above the scroll top. */
+  align-items: flex-start;
+  justify-content: center;
+  background: var(--bg);
+  border-bottom: none;
+  position: relative;
+  isolation: isolate;
+  overflow: auto;
+}
+body:has(#session-view.hidden) #import-section::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 640px 420px at 50% 40%,
+              var(--accent-dim), transparent 72%);
+  pointer-events: none;
+  z-index: -1;
+}
+body:has(#session-view.hidden) .import-inner {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  padding: 32px 32px 24px;
+  margin: auto;
 }
 
 /* Tabs */
@@ -708,12 +748,21 @@ tr:hover .cell-drag .tl-drag { opacity: .8; }
   color: var(--text-faint);
   margin-bottom: 10px;
 }
-.milestone-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+/* A graduated dial, not four identical pills — the content is a real sequence
+   (25 -> 100%), so the hue itself ramps from brass to success across it. */
+.milestone-btns {
+  display: flex;
+  gap: 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
 .btn-milestone {
   flex: 1;
   min-width: 58px;
   padding: 9px 10px;
-  border-radius: var(--radius);
+  border-radius: 0;
+  border-right: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text-secondary);
   font-size: 13px;
@@ -722,17 +771,24 @@ tr:hover .cell-drag .tl-drag { opacity: .8; }
   transition: background 200ms var(--ease), color 200ms var(--ease),
               transform 150ms var(--ease), box-shadow 200ms var(--ease);
 }
+.btn-milestone:last-child { border-right: none; }
 .btn-milestone:hover  { background: var(--surface-3); color: var(--text); }
-.btn-milestone:active { transform: scale(0.95); }
-.btn-milestone.active {
-  background: var(--accent-dim);
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+.btn-milestone:active { transform: scale(0.97); }
+
+.btn-milestone[data-pct="25"]  { color: color-mix(in srgb, var(--warning) 65%, var(--text-secondary)); }
+.btn-milestone[data-pct="50"]  { color: var(--warning); }
+.btn-milestone[data-pct="75"]  { color: color-mix(in srgb, var(--success) 75%, var(--warning) 25%); }
+.btn-milestone[data-pct="100"] { color: var(--success); font-weight: 700; }
+
+.btn-milestone.active[data-pct="25"],
+.btn-milestone.active[data-pct="50"] {
+  background: var(--warning-dim);
+  box-shadow: inset 0 -3px 0 var(--warning);
 }
-.btn-milestone--done.active {
+.btn-milestone.active[data-pct="75"],
+.btn-milestone.active[data-pct="100"] {
   background: var(--success-dim);
-  color: var(--success);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--success) 45%, transparent);
+  box-shadow: inset 0 -3px 0 var(--success);
 }
 
 /* ── Controls ────────────────────────────────────────────────────────────── */
@@ -740,7 +796,7 @@ tr:hover .cell-drag .tl-drag { opacity: .8; }
 .btn-xl { font-size: 15px; padding: 13px 24px; flex: 1; min-height: 48px; }
 
 .btn-primary {
-  background: var(--accent);
+  background: var(--accent-dark);
   color: #fff;
   border-radius: var(--radius);
   padding: 10px 20px;
@@ -750,7 +806,7 @@ tr:hover .cell-drag .tl-drag { opacity: .8; }
   transition: background 200ms var(--ease), transform 150ms var(--ease),
               opacity 200ms var(--ease);
 }
-.btn-primary:hover    { background: var(--accent-dark); }
+.btn-primary:hover    { background: color-mix(in srgb, var(--accent-dark) 88%, black); }
 .btn-primary:active   { transform: scale(0.97); }
 .btn-primary:disabled { opacity: .35; cursor: not-allowed; }
 
